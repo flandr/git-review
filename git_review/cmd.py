@@ -540,6 +540,7 @@ def load_config_file(config_file):
         'defaultbranch': 'defaultbranch',
         'defaultremote': 'defaultremote',
         'defaultrebase': 'defaultrebase',
+        'tracked': 'tracked',
     }
     config = {}
     for config_key, option_name in options.items():
@@ -560,6 +561,14 @@ def update_remote(remote):
         return False
     return True
 
+def get_tracking_branch():
+    """Get the tracked upstream branch if one exists"""
+    (status, output) = run_command_status("git", "rev-parse", "--abbrev-ref",
+        "--symbolic-full-name", "@{u}")
+    if status == 0:
+        (remote, branch) = output.spit("/", 2)
+        return branch
+    return None
 
 def check_remote(branch, remote, scheme, hostname, port, project):
     """Check that a Gerrit Git remote repo exists, if not, set one."""
@@ -1115,6 +1124,8 @@ def main():
                        "(skipped on conflicts or when -R is specified) "
                        "and show their differences")
 
+    parser.add_argument("--tracked", dest="tracked", action="store_true",
+                        help="Use tracked remote branch as default")
     parser.add_argument("-u", "--update", dest="update", action="store_true",
                         help="Force updates from remote locations")
     parser.add_argument("-s", "--setup", dest="setup", action="store_true",
@@ -1146,7 +1157,8 @@ def main():
                         update=False,
                         setup=False,
                         list=False,
-                        yes=False)
+                        yes=False,
+                        track=False)
     try:
         (top_dir, git_dir) = git_directories()
     except GitDirectoriesException as no_git_dir:
@@ -1158,8 +1170,8 @@ def main():
             git_config_get_value("gitreview", "rebase",
                                  default=str(config['defaultrebase'])))
         parser.set_defaults(rebase=defaultrebase,
-                            branch=config['defaultbranch'],
                             remote=config['defaultremote'])
+        defaultbranch = config['defaultbranch']
     options = parser.parse_args()
     if no_git_dir:
         raise no_git_dir
@@ -1168,7 +1180,12 @@ def main():
         print(COPYRIGHT)
         sys.exit(0)
 
-    branch = options.branch
+    if options.tracked:
+        # Use the tracked remote branch, if set
+        tracking = get_tracking_branch()
+        defaultbranch = tracking or defaultbranch
+
+    branch = options.branch or defaultbranch
     global VERBOSE
     global UPDATE
     VERBOSE = options.verbose
